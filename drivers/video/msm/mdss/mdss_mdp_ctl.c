@@ -24,19 +24,26 @@
 
 /* truncate at 1k */
 #define MDSS_MDP_BUS_FACTOR_SHIFT 10
-/* 1.5 bus fudge factor */
-#define MDSS_MDP_BUS_FUDGE_FACTOR_IB(val) (((val) / 2) * 3)
-#define MDSS_MDP_BUS_FUDGE_FACTOR_HIGH_IB(val) (val << 1)
-#ifdef CONFIG_F_SKYDISP_ADJUST_MDP_BANDWIDTH
-#define MDSS_MDP_BUS_FUDGE_FACTOR_AB(val) (div_u64(val,10) * 40);  //it is okay about 3.10 but 4.0 is safe for underrun*/
-#else
-#define MDSS_MDP_BUS_FUDGE_FACTOR_AB(val) (val << 1)
-#endif
-/* 20140325, kkcho, Bug-fix : 8974_KK underrun-issue, 1.6G ==> 3.2G */
-#define MDSS_MDP_BUS_FLOOR_BW (3200000000ULL >> MDSS_MDP_BUS_FACTOR_SHIFT)
+#define MDSS_MDP_BUS_FLOOR_BW (1600000000ULL >> MDSS_MDP_BUS_FACTOR_SHIFT)
 
-/* 1.25 clock fudge factor */
-#define MDSS_MDP_CLK_FUDGE_FACTOR(val) (((val) * 5) / 4)
+static inline u64 fudge_factor(u64 val, u32 numer, u32 denom)
+{
+	u64 result = (val * (u64)numer);
+	do_div(result, denom);
+	return result;
+}
+
+#define AB_FUDGE_FACTOR(val)		fudge_factor((val),		\
+	(mdss_res->ab_factor.numer), (mdss_res->ab_factor.denom))
+
+#define IB_FUDGE_FACTOR(val)		fudge_factor((val),		\
+	(mdss_res->ib_factor.numer), (mdss_res->ib_factor.denom))
+
+#define HIGH_IB_FUDGE_FACTOR(val)	fudge_factor((val),		\
+	(mdss_res->high_ib_factor.numer), (mdss_res->high_ib_factor.denom))
+
+#define CLK_FUDGE_FACTOR(val)		fudge_factor((val),		\
+	(mdss_res->clk_factor.numer), (mdss_res->clk_factor.denom))
 
 enum {
 	MDSS_MDP_PERF_UPDATE_SKIP,
@@ -162,11 +169,11 @@ static void __mdss_mdp_ctrl_perf_ovrd(struct mdss_data_type *mdata,
     }
 #endif
 
-	*ab_quota = MDSS_MDP_BUS_FUDGE_FACTOR_AB(*ab_quota);
+	*ab_quota = AB_FUDGE_FACTOR(*ab_quota);
 	if (npipe > 1)
-		*ib_quota = MDSS_MDP_BUS_FUDGE_FACTOR_HIGH_IB(*ib_quota);
+		*ib_quota = HIGH_IB_FUDGE_FACTOR(*ib_quota);
 	else
-		*ib_quota = MDSS_MDP_BUS_FUDGE_FACTOR_IB(*ib_quota);
+		*ib_quota = IB_FUDGE_FACTOR(*ib_quota);
 
 	if (ovrd && (*ib_quota < MDSS_MDP_BUS_FLOOR_BW)) {
 		*ib_quota = MDSS_MDP_BUS_FLOOR_BW;
@@ -208,7 +215,7 @@ static int mdss_mdp_ctl_perf_commit(struct mdss_data_type *mdata, u32 flags)
 		mdss_mdp_bus_scale_set_quota(bus_ab_quota, bus_ib_quota);
 	}
 	if (flags & MDSS_MDP_PERF_UPDATE_CLK) {
-		clk_rate = MDSS_MDP_CLK_FUDGE_FACTOR(clk_rate);
+		clk_rate = CLK_FUDGE_FACTOR(clk_rate);
 		pr_debug("update clk rate = %lu HZ\n", clk_rate);
 		mdss_mdp_set_clk_rate(clk_rate);
 	}
@@ -320,7 +327,7 @@ static void mdss_mdp_perf_mixer_update(struct mdss_mdp_mixer *mixer,
 		}
 		*clk_rate = mixer->width * v_total * fps;
 		if (pinfo && pinfo->lcdc.v_back_porch < MDP_MIN_VBP)
-			*clk_rate = MDSS_MDP_CLK_FUDGE_FACTOR(*clk_rate);
+			*clk_rate = CLK_FUDGE_FACTOR(*clk_rate);
 
 		if (!pinfo) {
 			/* perf for bus writeback */
