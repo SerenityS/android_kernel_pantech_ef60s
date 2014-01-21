@@ -39,6 +39,7 @@
 #include "scm-boot.h"
 #include "spm.h"
 #include "pm-boot.h"
+#include "clock.h"
 
 #if defined(CONFIG_CHECK_HWREV_FOR_CHANGING_PROXIMITY_THRESHOLD)
 #include <linux/proc_fs.h>
@@ -661,6 +662,13 @@ static enum msm_pm_time_stats_id msm_pm_power_collapse(bool from_idle)
 	pantechdbg_sched_msg("+(PC)");
 #endif
 #endif
+	/* This spews a lot of messages when a core is hotplugged. This
+	 * information is most useful from last core going down during
+	 * power collapse
+	 */
+	if ((!from_idle && cpu_online(cpu))
+			|| (MSM_PM_DEBUG_IDLE_CLK & msm_pm_debug_mask))
+		clock_debug_print_enabled();
 
 	avsdscr = avs_get_avsdscr();
 	avscsr = avs_get_avscsr();
