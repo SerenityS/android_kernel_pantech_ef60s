@@ -262,27 +262,11 @@ int mdss_mdp_overlay_req_check(struct msm_fb_data_type *mfd,
 	return 0;
 }
 
-#ifdef CONFIG_F_QUALCOMM_BUGFIX_MDP_UNDERRUN
-#define MUCH_DOWNSCALE(pipe) ((pipe->dst.w * 3) < pipe->src.w)
-#endif
 static int __mdp_pipe_tune_perf(struct mdss_mdp_pipe *pipe)
 {
 	struct mdss_data_type *mdata = pipe->mixer->ctl->mdata;
 	struct mdss_mdp_perf_params perf;
 	int rc;
-
-#ifdef CONFIG_F_QUALCOMM_BUGFIX_MDP_UNDERRUN
-	if (pipe->src_fmt->is_yuv && MUCH_DOWNSCALE(pipe)) {
-		if(mdata->has_decimation && !pipe->bwc_mode &&
-			(pipe->vert_deci < MAX_DECIMATION)) {
-			pipe->vert_deci++;
-		} else {
-			pr_debug("%s : Falling back to GPU comp.\
-				due to too much downscale\n", __func__);
-			return -EPERM;
-		}
-	}
-#endif
 
 	for (;;) {
 		rc = mdss_mdp_perf_calc_pipe(pipe, &perf, NULL);
@@ -1019,13 +1003,6 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	struct mdss_mdp_ctl *tmp;
 	int ret = 0;
-
-#ifdef CONFIG_F_QUALCOMM_BUGFIX_MDP_UNDERRUN
-	list_for_each_entry(pipe, &mdp5_data->pipes_cleanup, cleanup_list) { 
-		mdss_mdp_pipe_queue_data(pipe, NULL); 
-		mdss_mdp_mixer_pipe_unstage(pipe); 
-	}
-#endif
 	
 	list_for_each_entry(pipe, &mdp5_data->pipes_used, used_list) {
 		struct mdss_mdp_data *buf;
@@ -1223,10 +1200,8 @@ static int mdss_mdp_overlay_release(struct msm_fb_data_type *mfd, int ndx)
 					list_add(&pipe->cleanup_list,
 						&mdp5_data->pipes_cleanup);
 			}
-			mutex_unlock(&mfd->lock);
-#ifndef CONFIG_F_QUALCOMM_BUGFIX_MDP_UNDERRUN			
-			mdss_mdp_mixer_pipe_unstage(pipe);
-#endif			
+			mutex_unlock(&mfd->lock);		
+			mdss_mdp_mixer_pipe_unstage(pipe);			
 			mdss_mdp_pipe_unmap(pipe);
 			if (destroy_pipe)
 				mdss_mdp_pipe_destroy(pipe);
