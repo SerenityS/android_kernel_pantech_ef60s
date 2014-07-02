@@ -471,9 +471,7 @@ static int mdss_mdp_wb_queue(struct msm_fb_data_type *mfd,
 {
 	struct mdss_mdp_wb *wb = mfd_to_wb(mfd);
 	struct mdss_mdp_wb_data *node = NULL;
-#ifdef CONFIG_F_QUALCOMM_DETACH_IOMMU_BUGFIX
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
-#endif
 	int ret = 0;
 
 	if (!wb) {
@@ -481,11 +479,9 @@ static int mdss_mdp_wb_queue(struct msm_fb_data_type *mfd,
 		return -ENODEV;
 	}
 
-	pr_debug("fb%d queue\n", wb->fb_ndx);
-#ifdef CONFIG_F_QUALCOMM_DETACH_IOMMU_BUGFIX	
+	pr_debug("fb%d queue\n", wb->fb_ndx);	
 	if (!mfd->panel_info->cont_splash_enabled)
-		mdss_iommu_attach(mdp5_data->mdata);
-#endif	
+		mdss_iommu_attach(mdp5_data->mdata);	
 	mutex_lock(&wb->lock);
 	if (local)
 		node = get_local_node(wb, data);

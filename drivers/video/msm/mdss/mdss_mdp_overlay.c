@@ -885,13 +885,8 @@ static int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 	if (ctl->power_on) {
 		if (!mdp5_data->mdata->batfet)
 			mdss_mdp_batfet_ctrl(mdp5_data->mdata, true);
-#ifndef CONFIG_F_QUALCOMM_DETACH_IOMMU_BUGFIX
-		if (!is_mdss_iommu_attached() &&
-					!mfd->panel_info->cont_splash_enabled)
-#else
 		if (!mfd->panel_info->cont_splash_enabled)
 			mdss_iommu_attach(mdp5_data->mdata);
-#endif
 		return 0;
 	}
 
@@ -1009,10 +1004,7 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	struct mdss_mdp_ctl *tmp;
 	int ret = 0;
 	int sd_in_pipe = 0;
-#ifndef CONFIG_F_QUALCOMM_DETACH_IOMMU_BUGFIX
-	if (!is_mdss_iommu_attached() && !mfd->panel_info->cont_splash_enabled)
-		mdss_iommu_attach(mdp5_data->mdata);
-#endif
+    
 	if (ctl->shared_lock)
 		mutex_lock(ctl->shared_lock);
 
@@ -1318,9 +1310,8 @@ static int mdss_mdp_overlay_queue(struct msm_fb_data_type *mfd,
 	int ret;
 	u32 flags;
 	struct mdss_data_type *mdata = mfd_to_mdata(mfd);
-#ifdef CONFIG_F_QUALCOMM_DETACH_IOMMU_BUGFIX
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
-#endif	
+	
 	pipe = mdss_mdp_pipe_get(mdata, req->id);
 	if (IS_ERR_OR_NULL(pipe)) {
 		pr_err("pipe ndx=%x doesn't exist\n", req->id);
