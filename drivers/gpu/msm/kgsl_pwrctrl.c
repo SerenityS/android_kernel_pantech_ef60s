@@ -1430,10 +1430,6 @@ _sleep(struct kgsl_device *device)
 		break;
 	}
 
-#ifndef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
-	kgsl_mmu_disable_clk_on_ts(&device->mmu, 0, false);
-#endif	
-
 	return 0;
 }
 

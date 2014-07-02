@@ -461,11 +461,7 @@ done:
  * Disables iommu clocks
  * Return - void
  */
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu, int ctx_id)
-#else
-static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu)
-#endif
 {
 	struct kgsl_iommu *iommu = mmu->priv;
 	struct msm_iommu_drvdata *iommu_drvdata;
@@ -474,30 +470,21 @@ static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu)
 	for (i = 0; i < iommu->unit_count; i++) {
 		struct kgsl_iommu_unit *iommu_unit = &iommu->iommu_units[i];
 		for (j = 0; j < iommu_unit->dev_count; j++) {
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
-			if (ctx_id != iommu_unit->dev[j].ctx_id)
-#else
-			if (!iommu_unit->dev[j].clk_enabled)			
-#endif			
+			if (ctx_id != iommu_unit->dev[j].ctx_id)		
 				continue;
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 			atomic_dec(&iommu_unit->dev[j].clk_enable_count);
 			BUG_ON(atomic_read(&iommu_unit->dev[j].clk_enable_count) < 0);
 			/*
 			 * the clock calls have a refcount so call them on every
 			 * enable/disable call
-			 */
-#endif				
+			 */				
 			iommu_drvdata = dev_get_drvdata(
 					iommu_unit->dev[j].dev->parent);
 			if (iommu_drvdata->aclk)
 				clk_disable_unprepare(iommu_drvdata->aclk);
 			if (iommu_drvdata->clk)
 				clk_disable_unprepare(iommu_drvdata->clk);
-			clk_disable_unprepare(iommu_drvdata->pclk);
-#ifndef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND			
-			iommu_unit->dev[j].clk_enabled = false;
-#endif			
+			clk_disable_unprepare(iommu_drvdata->pclk);			
 		}
 	}
 }
