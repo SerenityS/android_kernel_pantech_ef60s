@@ -233,8 +233,13 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
    char custom[MAX_CUSTOM_LEN];
    char *p;
 
-   hddLog( LOG1, "hdd_IndicateScanResult " MAC_ADDRESS_STR,
-          MAC_ADDR_ARRAY(descriptor->bssId));
+   hddLog( LOG1, "hdd_IndicateScanResult %02x:%02x:%02x:%02x:%02x:%02x",
+          descriptor->bssId[0],
+          descriptor->bssId[1],
+          descriptor->bssId[2],
+          descriptor->bssId[3],
+          descriptor->bssId[4],
+          descriptor->bssId[5]);
 
    error = 0;
    last_event = current_event;
@@ -735,10 +740,20 @@ int iw_set_scan(struct net_device *dev, struct iw_request_info *info,
        memcpy( pHddCtx->scan_info.scanAddIE.addIEdata, pwextBuf->genIE.addIEdata, 
            pwextBuf->genIE.length );
        pHddCtx->scan_info.scanAddIE.length = pwextBuf->genIE.length;
-
-       pwextBuf->roamProfile.pAddIEScan = pHddCtx->scan_info.scanAddIE.addIEdata;
-       pwextBuf->roamProfile.nAddIEScanLength = pHddCtx->scan_info.scanAddIE.length;
-   
+      /* Maximum length of each IE is SIR_MAC_MAX_IE_LENGTH */
+       if (SIR_MAC_MAX_IE_LENGTH  >=  pwextBuf->genIE.length)
+       {
+           memcpy( pwextBuf->roamProfile.addIEScan,
+                       pHddCtx->scan_info.scanAddIE.addIEdata,
+                       pHddCtx->scan_info.scanAddIE.length);
+           pwextBuf->roamProfile.nAddIEScanLength =
+                                pHddCtx->scan_info.scanAddIE.length;
+       }
+       else
+       {
+           VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                     "Invalid ScanIE, Length is %d", pwextBuf->genIE.length);
+       }
        /* clear previous genIE after use it */
        memset( &pwextBuf->genIE, 0, sizeof(pwextBuf->genIE) );
    }
@@ -1115,10 +1130,20 @@ int iw_set_cscan(struct net_device *dev, struct iw_request_info *info,
             memcpy( pHddCtx->scan_info.scanAddIE.addIEdata, pwextBuf->genIE.addIEdata, 
                 pwextBuf->genIE.length );
             pHddCtx->scan_info.scanAddIE.length = pwextBuf->genIE.length;
-
-            pwextBuf->roamProfile.pAddIEScan = pHddCtx->scan_info.scanAddIE.addIEdata;
-            pwextBuf->roamProfile.nAddIEScanLength = pHddCtx->scan_info.scanAddIE.length;
-
+            if (SIR_MAC_MAX_IE_LENGTH  >=  pwextBuf->genIE.length)
+            {
+                memcpy( pwextBuf->roamProfile.addIEScan,
+                           pHddCtx->scan_info.scanAddIE.addIEdata,
+                           pHddCtx->scan_info.scanAddIE.length);
+                pwextBuf->roamProfile.nAddIEScanLength =
+                                  pHddCtx->scan_info.scanAddIE.length;
+            }
+            else
+            {
+                VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                         "Invalid ScanIE, Length is %d",
+                          pwextBuf->genIE.length);
+            }
             /* clear previous genIE after use it */
             memset( &pwextBuf->genIE, 0, sizeof(pwextBuf->genIE) );
         }
@@ -1167,8 +1192,8 @@ exit_point:
 }
 
 /* Abort any MAC scan if in progress */
-void hdd_abort_mac_scan(hdd_context_t* pHddCtx)
+void hdd_abort_mac_scan(hdd_context_t* pHddCtx, eCsrAbortReason reason)
 {
-    sme_AbortMacScan(pHddCtx->hHal);
+    sme_AbortMacScan(pHddCtx->hHal, reason);
 }
 

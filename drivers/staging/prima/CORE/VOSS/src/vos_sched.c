@@ -360,10 +360,7 @@ VosMCThread
   }
   set_user_nice(current, -2);
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0))
   daemonize("MC_Thread");
-#endif
-
   /*
   ** Ack back to the context from which the main controller thread has been
   ** created.
@@ -659,6 +656,8 @@ VosWDThread
   int retWaitStatus              = 0;
   v_BOOL_t shutdown              = VOS_FALSE;
   VOS_STATUS vosStatus = VOS_STATUS_SUCCESS;
+  hdd_context_t *pHddCtx         = NULL;
+  v_CONTEXT_t pVosContext        = NULL;
   set_user_nice(current, -3);
 
   if (Arg == NULL)
@@ -668,10 +667,24 @@ VosWDThread
      return 0;
   }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0))
-  daemonize("WD_Thread");
-#endif
+  /* Get the Global VOSS Context */
+  pVosContext = vos_get_global_context(VOS_MODULE_ID_SYS, NULL);
 
+  if(!pVosContext)
+  {
+     hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Global VOS context is Null", __func__);
+     return 0;
+  }
+
+  /* Get the HDD context */
+  pHddCtx = (hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext );
+
+  if(!pHddCtx)
+  {
+     hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);
+     return 0;
+  }
+  daemonize("WD_Thread");
   /*
   ** Ack back to the context from which the Watchdog thread has been
   ** created.
@@ -749,6 +762,7 @@ VosWDThread
           goto err_reset;
         }
         pWdContext->resetInProgress = false;
+        complete(&pHddCtx->ssr_comp_var);
       }
       else
       {
@@ -802,11 +816,7 @@ static int VosTXThread ( void * Arg )
          "%s Bad Args passed", __func__);
      return 0;
   }
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0))
   daemonize("TX_Thread");
-#endif
-
   /*
   ** Ack back to the context from which the main controller thread has been
   ** created.
@@ -1003,11 +1013,7 @@ static int VosRXThread ( void * Arg )
          "%s Bad Args passed", __func__);
      return 0;
   }
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0))
   daemonize("RX_Thread");
-#endif
-
   /*
   ** Ack back to the context from which the main controller thread has been
   ** created.
@@ -1469,7 +1475,7 @@ void vos_sched_flush_mc_mqs ( pVosSchedContext pSchedContext )
   while( NULL != (pMsgWrapper = vos_mq_get(&pSchedContext->sysMcMq) ))
   {
     VOS_TRACE( VOS_MODULE_ID_VOSS,
-               VOS_TRACE_LEVEL_ERROR,
+               VOS_TRACE_LEVEL_INFO,
                "%s: Freeing MC SYS message type %d ",__func__,
                pMsgWrapper->pVosMsg->type );
     sysMcFreeMsg(pSchedContext->pVContext, pMsgWrapper->pVosMsg);
@@ -1480,7 +1486,7 @@ void vos_sched_flush_mc_mqs ( pVosSchedContext pSchedContext )
   {
     if(pMsgWrapper->pVosMsg != NULL) 
     {
-        VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+        VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO,
                    "%s: Freeing MC WDA MSG message type %d",
                    __func__, pMsgWrapper->pVosMsg->type );
         if (pMsgWrapper->pVosMsg->bodyptr) {
@@ -1499,28 +1505,13 @@ void vos_sched_flush_mc_mqs ( pVosSchedContext pSchedContext )
   {
     if(pMsgWrapper->pVosMsg != NULL)
     {
-        VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+        VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO,
                    "%s: Freeing MC WDI MSG message type %d",
                    __func__, pMsgWrapper->pVosMsg->type );
-
-        /* MSG body pointer is not NULL
-         * and MSG type is 0
-         * This MSG is not posted by SMD NOTIFY
-         * We have to free MSG body */
-        if ((pMsgWrapper->pVosMsg->bodyptr) && (!pMsgWrapper->pVosMsg->type))
-        {
+        if (pMsgWrapper->pVosMsg->bodyptr) {
             vos_mem_free((v_VOID_t*)pMsgWrapper->pVosMsg->bodyptr);
         }
-        /* MSG body pointer is not NULL
-         * and MSG type is not 0
-         * This MSG is posted by SMD NOTIFY
-         * We should not free MSG body */
-        else if ((pMsgWrapper->pVosMsg->bodyptr) && pMsgWrapper->pVosMsg->type)
-        {
-            VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
-                       "%s: SMD NOTIFY MSG, do not free body",
-                       __func__);
-        }
+
         pMsgWrapper->pVosMsg->bodyptr = NULL;
         pMsgWrapper->pVosMsg->bodyval = 0;
         pMsgWrapper->pVosMsg->type = 0;
@@ -1532,7 +1523,7 @@ void vos_sched_flush_mc_mqs ( pVosSchedContext pSchedContext )
   while( NULL != (pMsgWrapper = vos_mq_get(&pSchedContext->peMcMq) ))
   {
     VOS_TRACE( VOS_MODULE_ID_VOSS,
-               VOS_TRACE_LEVEL_ERROR,
+               VOS_TRACE_LEVEL_INFO,
                "%s: Freeing MC PE MSG message type %d",__func__,
                pMsgWrapper->pVosMsg->type );
     peFreeMsg(vosCtx->pMACContext, (tSirMsgQ*)pMsgWrapper->pVosMsg);
@@ -1542,7 +1533,7 @@ void vos_sched_flush_mc_mqs ( pVosSchedContext pSchedContext )
   while( NULL != (pMsgWrapper = vos_mq_get(&pSchedContext->smeMcMq) ))
   {
     VOS_TRACE( VOS_MODULE_ID_VOSS,
-               VOS_TRACE_LEVEL_ERROR,
+               VOS_TRACE_LEVEL_INFO,
                "%s: Freeing MC SME MSG message type %d", __func__,
                pMsgWrapper->pVosMsg->type );
     sme_FreeMsg(vosCtx->pMACContext, pMsgWrapper->pVosMsg);
@@ -1552,7 +1543,7 @@ void vos_sched_flush_mc_mqs ( pVosSchedContext pSchedContext )
   while( NULL != (pMsgWrapper = vos_mq_get(&pSchedContext->tlMcMq) ))
   {
     VOS_TRACE( VOS_MODULE_ID_VOSS,
-               VOS_TRACE_LEVEL_ERROR,
+               VOS_TRACE_LEVEL_INFO,
                "%s: Freeing MC TL message type %d",__func__,
                pMsgWrapper->pVosMsg->type );
     WLANTL_McFreeMsg(pSchedContext->pVContext, pMsgWrapper->pVosMsg);

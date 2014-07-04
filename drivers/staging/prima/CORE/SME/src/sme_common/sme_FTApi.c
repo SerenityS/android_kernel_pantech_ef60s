@@ -72,7 +72,7 @@ void sme_FTOpen(tHalHandle hHal)
     pMac->ft.ftSmeContext.reassoc_ft_ies_length = 0;       
     pMac->ft.ftSmeContext.setFTPreAuthState = FALSE;
     pMac->ft.ftSmeContext.setFTPTKState = FALSE;
-    status = vos_timer_init(&pMac->ft.ftSmeContext.preAuthReassocIntvlTimer,VOS_TIMER_TYPE_SW,
+    status = palTimerAlloc(pMac->hHdd, &pMac->ft.ftSmeContext.preAuthReassocIntvlTimer, 
                             sme_PreauthReassocIntvlTimerCallback, (void *)pMac);
 
     if (eHAL_STATUS_SUCCESS != status)
@@ -129,7 +129,7 @@ void sme_FTClose(tHalHandle hHal)
         pMac->ft.ftSmeContext.psavedFTPreAuthRsp = NULL;                        
     }
 
-    vos_timer_destroy(&pMac->ft.ftSmeContext.preAuthReassocIntvlTimer);
+    palTimerFree(pMac->hHdd, pMac->ft.ftSmeContext.preAuthReassocIntvlTimer);
 }
 
 void sme_SetFTPreAuthState(tHalHandle hHal, v_BOOL_t state)
@@ -349,8 +349,9 @@ eHalStatus sme_FTSendUpdateKeyInd(tHalHandle hHal, tCsrRoamSetKey * pFTKeyInfo)
                   &pFTKeyInfo->peerMac[ 0 ],
                   sizeof(tCsrBssid) );
 
-    smsLog(pMac, LOG1, "BSSID = "MAC_ADDRESS_STR,
-           MAC_ADDR_ARRAY(pMsg->bssId));
+    smsLog(pMac, LOG1, "BSSID = %02X-%02X-%02X-%02X-%02X-%02X",
+           pMsg->bssId[0], pMsg->bssId[1], pMsg->bssId[2],
+           pMsg->bssId[3], pMsg->bssId[4], pMsg->bssId[5]);
 
     status = palSendMBMessage(pMac->hHdd, pMsg);
 

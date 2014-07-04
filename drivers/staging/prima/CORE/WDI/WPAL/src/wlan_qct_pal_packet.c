@@ -84,12 +84,6 @@ typedef struct
 /* Storage for DXE CB function pointer */
 static wpalPacketLowPacketCB wpalPacketAvailableCB;
 
-/* Temp storage for transport channel DIAG/LOG information
- * Each channel will update information with different context
- * Before send stored date to DIAG,
- * temporary it should be stored */
-static wpt_log_data_stall_type wpalTrasportStallInfo;
-
 /*
    wpalPacketInit is no-op for VOSS-support wpt_packet
 */
@@ -143,8 +137,6 @@ VOS_STATUS wpalPacketRXLowResourceCB(vos_pkt_t *pPacket, v_VOID_t *userData)
    }
 
    wpalPacketAvailableCB( (wpt_packet *)pPacket, userData );
-
-   wpalPacketAvailableCB = NULL;
 
    return VOS_STATUS_SUCCESS;
 }
@@ -488,6 +480,7 @@ WPT_STATIC WPT_INLINE void* itGetOSPktAddrFromDevice( wpt_packet *pPacket )
 {
 
    struct sk_buff *skb;
+
    /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
    if ( VOS_STATUS_SUCCESS != 
         vos_pkt_get_os_packet(WPAL_TO_VOS_PKT(pPacket), (void**)&skb, VOS_FALSE ))
@@ -496,6 +489,19 @@ WPT_STATIC WPT_INLINE void* itGetOSPktAddrFromDevice( wpt_packet *pPacket )
    }
    else
    {
+     if(skb->data == skb->tail)
+     {
+#ifdef WLAN_BUG_ON_SKB_ERROR
+       wpalDevicePanic();
+#else
+       WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_FATAL,
+                "%s: skb->data == skb->tail. Attempting recovery "
+                "skb:%p, head:%p, tail:%p, data:%p",
+                  __func__, skb, skb->head, skb->tail, skb->data);
+
+      skb->data = skb->head;
+#endif
+     }
      /*Map skb data into dma-able memory 
        (changes will be commited from cache) */
      return (void*)dma_map_single( NULL, skb->data, skb->len, DMA_FROM_DEVICE );
@@ -863,83 +869,3 @@ wpt_status wpalGetNumRxRawPacket(wpt_uint32 *numRxResource)
 
    return eWLAN_PAL_STATUS_SUCCESS;
 }
-
-/*---------------------------------------------------------------------------
-    wpalPacketStallUpdateInfo – Update each channel information when stall
-       detected, also power state and free resource count
-
-    Param:
-       powerState  ? WLAN system power state when stall detected
-       numFreeBd   ? Number of free resource count in HW
-       channelInfo ? Each channel specific information when stall happen
-       channelNum  ? Channel number update information
-
-    Return:
-       NONE
-
----------------------------------------------------------------------------*/
-void wpalPacketStallUpdateInfo
-(
-   v_U32_t                         *powerState,
-   v_U32_t                         *numFreeBd,
-   wpt_log_data_stall_channel_type *channelInfo,
-   v_U8_t                           channelNum
-)
-{
-   /* Update power state when stall detected */
-   if(NULL != powerState)
-   {
-      wpalTrasportStallInfo.PowerState = *powerState;
-   }
-
-   /* Update HW free resource count */
-   if(NULL != numFreeBd)
-   {
-      wpalTrasportStallInfo.numFreeBd  = *numFreeBd;
-   }
-
-   /* Update channel information */
-   if(NULL != channelInfo)
-   {
-      wpalMemoryCopy(&wpalTrasportStallInfo.dxeChannelInfo[channelNum],
-                     channelInfo,
-                     sizeof(wpt_log_data_stall_channel_type));
-   }
-
-   return;
-}
-
-#ifdef FEATURE_WLAN_DIAG_SUPPORT
-/*---------------------------------------------------------------------------
-    wpalPacketStallDumpLog – Trigger to send log packet to DIAG
-       Updated transport system information will be sent to DIAG
-
-    Param:
-        NONE
-
-    Return:
-        NONE
-
----------------------------------------------------------------------------*/
-void wpalPacketStallDumpLog
-(
-   void
-)
-{
-   vos_log_data_stall_type  *log_ptr = NULL;
-
-   WLAN_VOS_DIAG_LOG_ALLOC(log_ptr, vos_log_data_stall_type, LOG_TRSP_DATA_STALL_C);
-   if(log_ptr)
-   {
-      log_ptr->PowerState = wpalTrasportStallInfo.PowerState;
-      log_ptr->numFreeBd  = wpalTrasportStallInfo.numFreeBd;
-      wpalMemoryCopy(&log_ptr->dxeChannelInfo[0],
-                     &wpalTrasportStallInfo.dxeChannelInfo[0],
-                     WPT_NUM_TRPT_CHANNEL * sizeof(vos_log_data_stall_channel_type));
-      pr_info("Stall log dump");
-      WLAN_VOS_DIAG_LOG_REPORT(log_ptr);
-   }
-
-   return;
-}
-#endif /* FEATURE_WLAN_DIAG_SUPPORT */
