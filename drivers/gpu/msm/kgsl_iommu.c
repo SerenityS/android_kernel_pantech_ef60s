@@ -461,11 +461,7 @@ done:
  * Disables iommu clocks
  * Return - void
  */
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu, int ctx_id)
-#else
-static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu)
-#endif
 {
 	struct kgsl_iommu *iommu = mmu->priv;
 	struct msm_iommu_drvdata *iommu_drvdata;
@@ -474,20 +470,15 @@ static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu)
 	for (i = 0; i < iommu->unit_count; i++) {
 		struct kgsl_iommu_unit *iommu_unit = &iommu->iommu_units[i];
 		for (j = 0; j < iommu_unit->dev_count; j++) {
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 			if (ctx_id != iommu_unit->dev[j].ctx_id)
-#else
-			if (!iommu_unit->dev[j].clk_enabled)			
-#endif			
 				continue;
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 			atomic_dec(&iommu_unit->dev[j].clk_enable_count);
-			BUG_ON(atomic_read(&iommu_unit->dev[j].clk_enable_count) < 0);
+			BUG_ON(
+			atomic_read(&iommu_unit->dev[j].clk_enable_count) < 0);
 			/*
 			 * the clock calls have a refcount so call them on every
 			 * enable/disable call
 			 */
-#endif				
 			iommu_drvdata = dev_get_drvdata(
 					iommu_unit->dev[j].dev->parent);
 			if (iommu_drvdata->aclk)
@@ -495,9 +486,6 @@ static void kgsl_iommu_disable_clk(struct kgsl_mmu *mmu)
 			if (iommu_drvdata->clk)
 				clk_disable_unprepare(iommu_drvdata->clk);
 			clk_disable_unprepare(iommu_drvdata->pclk);
-#ifndef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND			
-			iommu_unit->dev[j].clk_enabled = false;
-#endif			
 		}
 	}
 }
@@ -518,43 +506,17 @@ static void kgsl_iommu_clk_disable_event(struct kgsl_device *device, void *data,
 					unsigned int id, unsigned int ts,
 					u32 type)
 {
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 	struct kgsl_iommu_disable_clk_param *param = data;
-	
+
 	if ((0 <= timestamp_cmp(ts, param->ts)) ||
 		(KGSL_EVENT_CANCELLED == type))
 		kgsl_iommu_disable_clk(param->mmu, param->ctx_id);
 	else
 		/* something went wrong with the event handling mechanism */
 		BUG_ON(1);
-#else
-	struct kgsl_mmu *mmu = data;
-	struct kgsl_iommu *iommu = mmu->priv;
 
-	if (!iommu->clk_event_queued) {
-		if (0 > timestamp_cmp(ts, iommu->iommu_last_cmd_ts))
-			KGSL_DRV_ERR(device,
-			"IOMMU disable clock event being cancelled, "
-			"iommu_last_cmd_ts: %x, retired ts: %x\n",
-			iommu->iommu_last_cmd_ts, ts);
-		return;
-	}
-
-	if (0 <= timestamp_cmp(ts, iommu->iommu_last_cmd_ts)) {
-		kgsl_iommu_disable_clk(mmu);
-		iommu->clk_event_queued = false;
-	} else {
-		/* add new event to fire when ts is reached, this can happen
-		 * if we queued an event and someone requested the clocks to
-		 * be disbaled on a later timestamp */
-		if (kgsl_add_event(device, id, iommu->iommu_last_cmd_ts,
-			kgsl_iommu_clk_disable_event, mmu, mmu)) {
-				KGSL_DRV_ERR(device,
-				"Failed to add IOMMU disable clk event\n");
-				iommu->clk_event_queued = false;
-		}
-	}
-#endif	
+	/* Free param we are done using it */
+	kfree(param);
 }
 
 /*
@@ -573,19 +535,12 @@ static void kgsl_iommu_clk_disable_event(struct kgsl_device *device, void *data,
  * the clocks will be disabled
  * Return - void
  */
- 
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 static void
-kgsl_iommu_disable_clk_on_ts(struct kgsl_mmu *mmu, unsigned int ts, int ctx_id)
-#else
-static void
-kgsl_iommu_disable_clk_on_ts(struct kgsl_mmu *mmu, unsigned int ts,
-				bool ts_valid)
-#endif				
+kgsl_iommu_disable_clk_on_ts(struct kgsl_mmu *mmu,
+				unsigned int ts, int ctx_id)
 {
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 	struct kgsl_iommu_disable_clk_param *param;
-	
+
 	param = kzalloc(sizeof(*param), GFP_KERNEL);
 	if (!param) {
 		KGSL_CORE_ERR("kzalloc(%d) failed\n", sizeof(*param));
@@ -601,28 +556,6 @@ kgsl_iommu_disable_clk_on_ts(struct kgsl_mmu *mmu, unsigned int ts,
 			"Failed to add IOMMU disable clk event\n");
 		kfree(param);
 	}
-#else
-	struct kgsl_iommu *iommu = mmu->priv;
-
-	if (iommu->clk_event_queued) {
-		if (ts_valid && (0 <
-			timestamp_cmp(ts, iommu->iommu_last_cmd_ts)))
-			iommu->iommu_last_cmd_ts = ts;
-	} else {
-		if (ts_valid) {
-			iommu->iommu_last_cmd_ts = ts;
-			iommu->clk_event_queued = true;
-			if (kgsl_add_event(mmu->device, KGSL_MEMSTORE_GLOBAL,
-				ts, kgsl_iommu_clk_disable_event, mmu, mmu)) {
-				KGSL_DRV_ERR(mmu->device,
-				"Failed to add IOMMU disable clk event\n");
-				iommu->clk_event_queued = false;
-			}
-		} else {
-			kgsl_iommu_disable_clk(mmu);
-		}
-	}
-#endif	
 }
 
 /*
@@ -644,12 +577,7 @@ static int kgsl_iommu_enable_clk(struct kgsl_mmu *mmu,
 	for (i = 0; i < iommu->unit_count; i++) {
 		struct kgsl_iommu_unit *iommu_unit = &iommu->iommu_units[i];
 		for (j = 0; j < iommu_unit->dev_count; j++) {
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 			if (ctx_id != iommu_unit->dev[j].ctx_id)
-#else		
-			if (iommu_unit->dev[j].clk_enabled ||
-				ctx_id != iommu_unit->dev[j].ctx_id)
-#endif				
 				continue;
 			iommu_drvdata =
 			dev_get_drvdata(iommu_unit->dev[j].dev->parent);
@@ -675,15 +603,10 @@ static int kgsl_iommu_enable_clk(struct kgsl_mmu *mmu,
 					goto done;
 				}
 			}
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 			atomic_inc(&iommu_unit->dev[j].clk_enable_count);
-#else			
-			iommu_unit->dev[j].clk_enabled = true;
-#endif			
 		}
 	}
 done:
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 	if (ret) {
 		struct kgsl_iommu_unit *iommu_unit;
 		if (iommu->unit_count == i)
@@ -699,10 +622,6 @@ done:
 			}
 		} while (i >= 0);
 	}
-#else
-	if (ret)
-		kgsl_iommu_disable_clk(mmu);
-#endif		
 	return ret;
 }
 
@@ -722,16 +641,21 @@ static int kgsl_iommu_pt_equal(struct kgsl_mmu *mmu,
 				phys_addr_t pt_base)
 {
 	struct kgsl_iommu_pt *iommu_pt = pt ? pt->priv : NULL;
-	phys_addr_t domain_ptbase = iommu_pt ?
-				iommu_get_pt_base_addr(iommu_pt->domain) : 0;
+	phys_addr_t domain_ptbase;
+
+	if (iommu_pt == NULL)
+		return 0;
+
+	domain_ptbase = iommu_get_pt_base_addr(iommu_pt->domain)
+			& KGSL_IOMMU_CTX_TTBR0_ADDR_MASK;
 
 	/* Only compare the valid address bits of the pt_base */
 	domain_ptbase &= KGSL_IOMMU_CTX_TTBR0_ADDR_MASK;
 
 	pt_base &= KGSL_IOMMU_CTX_TTBR0_ADDR_MASK;
 
-	return domain_ptbase && pt_base &&
-		(domain_ptbase == pt_base);
+	return (domain_ptbase == pt_base);
+
 }
 
 /*
@@ -931,9 +855,9 @@ static int _get_iommu_ctxs(struct kgsl_mmu *mmu,
 			ret = -EINVAL;
 			goto done;
 		}
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
-		atomic_set(&(iommu_unit->dev[iommu_unit->dev_count].clk_enable_count), 0);
-#endif		
+		atomic_set(
+		&(iommu_unit->dev[iommu_unit->dev_count].clk_enable_count),
+		0);
 
 		iommu_unit->dev[iommu_unit->dev_count].dev =
 			msm_iommu_get_ctx(data->iommu_ctxs[i].iommu_ctx_name);
@@ -1127,6 +1051,10 @@ inline unsigned int kgsl_iommu_sync_lock(struct kgsl_mmu *mmu,
 	*cmds++ = 0x1;
 	*cmds++ = 0x1;
 
+	/* WAIT_REG_MEM turns back on protected mode - push it off */
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
+	*cmds++ = 0;
+
 	*cmds++ = cp_type3_packet(CP_MEM_WRITE, 2);
 	*cmds++ = lock_vars->turn;
 	*cmds++ = 0;
@@ -1141,9 +1069,17 @@ inline unsigned int kgsl_iommu_sync_lock(struct kgsl_mmu *mmu,
 	*cmds++ = 0x1;
 	*cmds++ = 0x1;
 
+	/* WAIT_REG_MEM turns back on protected mode - push it off */
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
+	*cmds++ = 0;
+
 	*cmds++ = cp_type3_packet(CP_TEST_TWO_MEMS, 3);
 	*cmds++ = lock_vars->flag[PROC_APPS];
 	*cmds++ = lock_vars->turn;
+	*cmds++ = 0;
+
+	/* TEST_TWO_MEMS turns back on protected mode - push it off */
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
 	*cmds++ = 0;
 
 	cmds += adreno_add_idle_cmds(adreno_dev, cmds);
@@ -1755,9 +1691,6 @@ static int kgsl_iommu_start(struct kgsl_mmu *mmu)
 	}
 	status = kgsl_iommu_enable_clk(mmu, KGSL_IOMMU_CONTEXT_USER);
 	if (status) {
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
-		kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_CONTEXT_USER);
-#endif		
 		KGSL_CORE_ERR("clk enable failed\n");
 		goto done;
 	}
@@ -1816,22 +1749,41 @@ static int kgsl_iommu_start(struct kgsl_mmu *mmu)
 	kgsl_cffdump_setmem(mmu->device, mmu->setstate_memory.gpuaddr +
 				KGSL_IOMMU_SETSTATE_NOP_OFFSET,
 				cp_nop_packet(1), sizeof(unsigned int));
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
+
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_CONTEXT_USER);
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_CONTEXT_PRIV);
-#else
-	kgsl_iommu_disable_clk_on_ts(mmu, 0, false);
-#endif	
 	mmu->flags |= KGSL_FLAGS_STARTED;
 
 done:
-#ifndef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
-	if (status) {
-		kgsl_iommu_disable_clk_on_ts(mmu, 0, false);
-		kgsl_detach_pagetable_iommu_domain(mmu);
-	}
-#endif	
 	return status;
+}
+
+static void kgsl_iommu_flush_tlb_pt_current(struct kgsl_pagetable *pt)
+{
+	int lock_taken = 0;
+	struct kgsl_device *device = pt->mmu->device;
+	struct kgsl_iommu *iommu = pt->mmu->priv;
+
+	/*
+	 * Check to see if the current thread already holds the device mutex.
+	 * If it does not, then take the device mutex which is required for
+	 * flushing the tlb
+	 */
+	if (!kgsl_mutex_lock(&device->mutex, &device->mutex_owner))
+		lock_taken = 1;
+
+	/*
+	 * Flush the tlb only if the iommu device is attached and the pagetable
+	 * hasn't been switched yet
+	 */
+	if (kgsl_mmu_is_perprocess(pt->mmu) &&
+		iommu->iommu_units[0].dev[KGSL_IOMMU_CONTEXT_USER].attached &&
+		kgsl_iommu_pt_equal(pt->mmu, pt,
+		kgsl_iommu_get_current_ptbase(pt->mmu)))
+		kgsl_iommu_default_setstate(pt->mmu, KGSL_MMUFLAGS_TLBFLUSH);
+
+	if (lock_taken)
+		kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 }
 
 static int
@@ -1839,11 +1791,9 @@ kgsl_iommu_unmap(struct kgsl_pagetable *pt,
 		struct kgsl_memdesc *memdesc,
 		unsigned int *tlb_flags)
 {
-	int ret = 0, lock_taken = 0;
+	int ret = 0;
 	unsigned int range = memdesc->size;
 	struct kgsl_iommu_pt *iommu_pt = pt->priv;
-	struct kgsl_device *device = pt->mmu->device;
-	struct kgsl_iommu *iommu = pt->mmu->priv;
 
 	/* All GPU addresses as assigned are page aligned, but some
 	   functions purturb the gpuaddr with an offset, so apply the
@@ -1865,29 +1815,7 @@ kgsl_iommu_unmap(struct kgsl_pagetable *pt,
 		return ret;
 	}
 
-	/*
-	 * Check to see if the current thread already holds the device mutex.
-	 * If it does not, then take the device mutex which is required for
-	 * flushing the tlb
-	 */
-	if (!mutex_is_locked(&device->mutex) ||
-		device->mutex.owner != current) {
-		mutex_lock(&device->mutex);
-		lock_taken = 1;
-	}
-
-	/*
-	 * Flush the tlb only if the iommu device is attached and the pagetable
-	 * hasn't been switched yet
-	 */
-	if (kgsl_mmu_is_perprocess(pt->mmu) &&
-		iommu->iommu_units[0].dev[KGSL_IOMMU_CONTEXT_USER].attached &&
-		kgsl_iommu_pt_equal(pt->mmu, pt,
-		kgsl_iommu_get_current_ptbase(pt->mmu)))
-		kgsl_iommu_default_setstate(pt->mmu, KGSL_MMUFLAGS_TLBFLUSH);
-
-	if (lock_taken)
-		mutex_unlock(&device->mutex);
+	kgsl_iommu_flush_tlb_pt_current(pt);
 
 	return ret;
 }
@@ -1929,6 +1857,23 @@ kgsl_iommu_map(struct kgsl_pagetable *pt,
 					  size);
 		}
 	}
+
+	/*
+	 *  IOMMU V1 BFBs pre-fetch data beyond what is being used by the core.
+	 *  This can include both allocated pages and un-allocated pages.
+	 *  If an un-allocated page is cached, and later used (if it has been
+	 *  newly dynamically allocated by SW) the SMMU HW should automatically
+	 *  re-fetch the pages from memory (rather than using the cached
+	 *  un-allocated page). This logic is known as the re-fetch logic.
+	 *  In current chips we suspect this re-fetch logic is broken,
+	 *  it can result in bad translations which can either cause downstream
+	 *  bus errors, or upstream cores being hung (because of garbage data
+	 *  being read) -> causing TLB sync stuck issues. As a result SW must
+	 *  implement the invalidate+map.
+	 */
+	if (!msm_soc_version_supports_iommu_v0())
+		kgsl_iommu_flush_tlb_pt_current(pt);
+
 	return ret;
 }
 
@@ -1953,9 +1898,7 @@ void kgsl_iommu_pagefault_resume(struct kgsl_mmu *mmu)
 						iommu_unit,
 						iommu_unit->dev[j].ctx_id,
 						FSR, 0);
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND						
 					kgsl_iommu_disable_clk(mmu, j);
-#endif					
 					_iommu_unlock(iommu);
 					iommu_unit->dev[j].fault = 0;
 				}
@@ -1968,9 +1911,6 @@ void kgsl_iommu_pagefault_resume(struct kgsl_mmu *mmu)
 
 static void kgsl_iommu_stop(struct kgsl_mmu *mmu)
 {
-#ifndef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
-	struct kgsl_iommu *iommu = mmu->priv;
-#endif	
 	/*
 	 *  stop device mmu
 	 *
@@ -1986,15 +1926,7 @@ static void kgsl_iommu_stop(struct kgsl_mmu *mmu)
 		kgsl_iommu_pagefault_resume(mmu);
 	}
 	/* switch off MMU clocks and cancel any events it has queued */
-#ifndef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND	
-	iommu->clk_event_queued = false;
-#endif
-	
 	kgsl_cancel_events(mmu->device, mmu);
-	
-#ifndef	CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND	
-	kgsl_iommu_disable_clk(mmu);
-#endif	
 }
 
 static int kgsl_iommu_close(struct kgsl_mmu *mmu)
@@ -2044,17 +1976,10 @@ kgsl_iommu_get_current_ptbase(struct kgsl_mmu *mmu)
 		return 0;
 	/* Return the current pt base by reading IOMMU pt_base register */
 	kgsl_iommu_enable_clk(mmu, KGSL_IOMMU_CONTEXT_USER);
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 	pt_base = KGSL_IOMMU_GET_CTX_REG(iommu,
 				(&iommu->iommu_units[0]),
 				KGSL_IOMMU_CONTEXT_USER, TTBR0);
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_CONTEXT_USER);
-#else	
-	pt_base = KGSL_IOMMU_GET_CTX_REG(iommu, (&iommu->iommu_units[0]),
-					KGSL_IOMMU_CONTEXT_USER,
-					TTBR0);
-	kgsl_iommu_disable_clk_on_ts(mmu, 0, false);
-#endif	
 	return pt_base & KGSL_IOMMU_CTX_TTBR0_ADDR_MASK;
 }
 
@@ -2169,11 +2094,7 @@ unlock:
 	_iommu_unlock(iommu);
 
 	/* Disable smmu clock */
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_BUS_HANG_SECOND
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_CONTEXT_USER);
-#else	
-	kgsl_iommu_disable_clk_on_ts(mmu, 0, false);
-#endif
 	return ret;
 }
 
@@ -2220,11 +2141,10 @@ static int kgsl_iommu_get_num_iommu_units(struct kgsl_mmu *mmu)
 	return iommu->unit_count;
 }
 
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_PAGE_FAULT
 /*
  * kgsl_iommu_set_pf_policy() - Set the pagefault policy for IOMMU
  * @mmu: Pointer to mmu structure
- * @pf_policy: The pagefault polict to set00
+ * @pf_policy: The pagefault polict to set
  *
  * Check if the new policy indicated by pf_policy is same as current
  * policy, if same then return else set the policy
@@ -2286,7 +2206,6 @@ static int kgsl_iommu_set_pf_policy(struct kgsl_mmu *mmu,
 	kgsl_iommu_disable_clk_on_ts(mmu, 0, false);
 	return ret;
 }
-#endif
 
 struct kgsl_mmu_ops iommu_ops = {
 	.mmu_init = kgsl_iommu_init,
@@ -2313,9 +2232,7 @@ struct kgsl_mmu_ops iommu_ops = {
 	.mmu_cleanup_pt = NULL,
 	.mmu_sync_lock = kgsl_iommu_sync_lock,
 	.mmu_sync_unlock = kgsl_iommu_sync_unlock,
-#ifdef CONFIG_F_QUALCOMM_GPU_PATCH_FOR_PAGE_FAULT
 	.mmu_set_pf_policy = kgsl_iommu_set_pf_policy,
-#endif
 };
 
 struct kgsl_mmu_pt_ops iommu_pt_ops = {

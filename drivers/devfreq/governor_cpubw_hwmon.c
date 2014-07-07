@@ -246,8 +246,9 @@ static void compute_bw(int mbps, unsigned long *freq, unsigned long *ab)
 		new_bw /= 100;
 	}
 
-	*ab = roundup(mbps, bw_step);
-	*freq = (mbps * 100) / io_percent;
+	prev_ab = new_bw;
+	*ab = roundup(new_bw, bw_step);
+	*freq = (new_bw * 100) / io_percent;
 }
 
 #define TOO_SOON_US	(1 * USEC_PER_MSEC)
@@ -345,6 +346,7 @@ static int devfreq_cpubw_hwmon_get_freq(struct devfreq *df,
 	return 0;
 }
 
+gov_attr(sample_ms, 10U, 500U);
 gov_attr(tolerance_percent, 0U, 30U);
 gov_attr(guard_band_mbps, 0U, 2000U);
 gov_attr(decay_rate, 0U, 100U);
@@ -352,6 +354,7 @@ gov_attr(io_percent, 1U, 100U);
 gov_attr(bw_step, 50U, 1000U);
 
 static struct attribute *dev_attr[] = {
+	&dev_attr_sample_ms.attr,
 	&dev_attr_tolerance_percent.attr,
 	&dev_attr_guard_band_mbps.attr,
 	&dev_attr_decay_rate.attr,

@@ -571,270 +571,16 @@ void cabc_control(struct mdss_panel_data *pdata, int state)
 }
 #endif
 
-
-#ifdef CONFIG_F_SKYDISP_HBM_FOR_AMOLED
-void hbm_control(struct mdss_panel_data *pdata, int state)
-{
-
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct dcs_cmd_req cmdreq;
-
-	char hbm_data[2] = {0x53, 0xD0};
-	char acl_data[2] = {0x55, 0x00};	
-	struct dsi_cmd_desc hbm_data_cmd = {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(hbm_data)},hbm_data};
-	struct dsi_cmd_desc acl_data_cmd = {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(acl_data)},acl_data};
-
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-
-	if(pdata->hbm_flag == state)
-		return;
-	
-	if(state == 0){
-		hbm_data[1] = 0x00;
-		acl_data[1] = 0x01; 
-	}
-	else
-	{//off
-		hbm_data[1] = 0xD0;
-		acl_data[1] = 0x02;
-	}
-
-	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &hbm_data_cmd;
-	cmdreq.cmds_cnt = 1;
-	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
-	cmdreq.rlen = 0;
-	cmdreq.cb = NULL;
-
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
-	mdss_set_tx_power_mode(0 , pdata );
-	
-	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-	
-	cmdreq.cmds = &acl_data_cmd;
-	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-	
-	mdss_set_tx_power_mode(1 , pdata );
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
-	pdata->hbm_flag = state;
-	pr_info("Oled hbm %s \n",state ? "on" : "off" );
-
-}
-
-#endif
-#ifdef CONFIG_F_SKYDISP_SMARTDIMMING
-void panel_gamma_sort(struct mdss_dsi_ctrl_pdata *pdata)
-{
-	int i;
-	int index;
-	int cnt = 27;
-	int temp_data = 0;
-	if(pdata == NULL)
-		return;
-
-	
-	for(index = 0; index < GAMMA_TABLE_SIZE; index++){
-		for(i = 0; i < 15;){
-			temp_data = pdata->gamma_set.gamma_table[index][i];
-			pdata->gamma_set.gamma_table[index][i] = pdata->gamma_set.gamma_table[index][cnt];
-			pdata->gamma_set.gamma_table[index][cnt] = temp_data;
-
-			temp_data= pdata->gamma_set.gamma_table[index][i+1];
-			pdata->gamma_set.gamma_table[index][i+1] = pdata->gamma_set.gamma_table[index][cnt+1];
-			pdata->gamma_set.gamma_table[index][cnt+1] = temp_data;
-
-			temp_data= pdata->gamma_set.gamma_table[index][i+2];
-			pdata->gamma_set.gamma_table[index][i+2] = pdata->gamma_set.gamma_table[index][cnt+2];
-			pdata->gamma_set.gamma_table[index][cnt+2] = temp_data;
-			i += 3; 
-			cnt -= 3;
-		}
-		cnt =27;
-	}
-#if 0
-	for( i = 0; i < 32;i++)
-		for( index = 0; index< 30;){
-			printk("R : 0x%x  G :0x%x B : 0x%x\n",pdata->gamma_set.gamma_table[i][index],pdata->gamma_set.gamma_table[i][index+1],pdata->gamma_set.gamma_table[i][index+2]);
-		index+=3;
-		}
-#endif
-}
-void mtp_read(int data,char * read_buf)
-{
-
-	struct msm_fb_data_type *mfd = mfdmsm_fb_get_mfd();
-	struct mdss_panel_info *panel_info = mfd->panel_info;
-	struct mdss_panel_data * pdata =NULL;
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	int index = 0;
-	int temp_index = V203;
-	
-	pdata = container_of(panel_info, struct mdss_panel_data,
-				panel_info);
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-
-	for(index = 0; index < data; index++){
-		//printk("OLED Mtp Value[%d] = %d\n",ctrl_pdata->mtp_cnt,*read_buf);
-		ctrl_pdata->panel_read_mtp.mtp_data_RGB[ctrl_pdata->mtp_cnt] = *(read_buf);
-		(read_buf)++;
-		ctrl_pdata->mtp_cnt++;
-	}
-	
-	if(ctrl_pdata->mtp_cnt == MTP_READ_MAX)
-	{
-		ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][V255] = ((ctrl_pdata->panel_read_mtp.mtp_data_RGB[0] & 0x01) <<8) + ctrl_pdata->panel_read_mtp.mtp_data_RGB[1];
-		ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][V255] = ((ctrl_pdata->panel_read_mtp.mtp_data_RGB[2] & 0x01) << 8) + ctrl_pdata->panel_read_mtp.mtp_data_RGB[3];
-		ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][V255] = ((ctrl_pdata->panel_read_mtp.mtp_data_RGB[4] & 0x01) << 8)+ ctrl_pdata->panel_read_mtp.mtp_data_RGB[5];
-
-		if(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][V255] > 255)
-			ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][V255] = -(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][V255] -256);
-		if(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][V255] > 255)
-			ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][V255] = -(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][V255] -256);
-		if(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][V255] > 255)
-			ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][V255] = -(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][V255] -256);
-
-		for(index = 6; index < MTP_READ_MAX; )
-		{
-			ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][temp_index] = ctrl_pdata->panel_read_mtp.mtp_data_RGB[index];
-			ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][temp_index] = ctrl_pdata->panel_read_mtp.mtp_data_RGB[index + 1];
-			ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][temp_index] = ctrl_pdata->panel_read_mtp.mtp_data_RGB[index + 2];
-			
-			if(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][temp_index] > 127)
-				ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][temp_index] = -(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][temp_index] - 128);
-			if(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][temp_index] > 127)
-				ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][temp_index] = -(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][temp_index] - 128);
-			if(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][temp_index] > 127)
-				ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][temp_index] = -(ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][temp_index] - 128);
-			
-			index += 3;
-			temp_index--;
-		}	
-
-		//gamma_add2_mtp
-		for(index = 0; index < V255_MAX; index++){
-			for(temp_index = 0; temp_index < RGB_MAX; temp_index++){
-				ctrl_pdata->panel_read_mtp.gamma_add2_mtp[temp_index][index] = ctrl_pdata->panel_read_mtp.mtp_RGB[temp_index][index] 
-																+ ctrl_pdata->panel_read_mtp.panel_gamma_data[temp_index][index];
-			}
-		}	
-		
-#if 0//def SMART_DIMMING_DEBUG
-		for(index = 0;index < 10;index++)
-			printk("mtp_data_R[%d]\n",ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_R][index]);
-		printk("======\n");
-		for(index = 0;index < 10;index++)
-			printk("mtp_data_G[%d]\n",ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_G][index]);
-		printk("======\n");
-		for(index = 0;index < 10;index++)
-			printk("mtp_data_B[%d]\n",ctrl_pdata->panel_read_mtp.mtp_RGB[RGB_B][index]);
-
-		for(index = 0;index < 10;index++)
-			printk("panel_gamma_data_R[%d]\n",ctrl_pdata->panel_read_mtp.panel_gamma_data[RGB_R][index]);
-		printk("======\n");
-		for(index = 0;index < 10;index++)
-			printk("panel_gamma_data_G[%d]\n",ctrl_pdata->panel_read_mtp.panel_gamma_data[RGB_G][index]);
-		printk("======\n");
-		for(index = 0;index < 10;index++)
-			printk("panel_gamma_data_B[%d]\n",ctrl_pdata->panel_read_mtp.panel_gamma_data[RGB_B][index]);
-		
-		for(index = 0;index < 10;index++)
-			printk("gamma_add2_mtp[%d]\n",ctrl_pdata->panel_read_mtp.gamma_add2_mtp[RGB_R][index]);
-		printk("======\n");
-		for(index = 0;index < 10;index++)
-			printk("gamma_add2_mtp[%d]\n",ctrl_pdata->panel_read_mtp.gamma_add2_mtp[RGB_G][index]);
-		printk("======\n");
-		for(index = 0;index < 10;index++)
-			printk("gamma_add2_mtp[%d]\n",ctrl_pdata->panel_read_mtp.gamma_add2_mtp[RGB_B][index]);
-#endif
-	}
-
-}	
-void mtp_read_work(struct work_struct *work)
-{
-	struct msm_fb_data_type *mfd = mfdmsm_fb_get_mfd();
-	struct mdss_panel_info *panel_info = mfd->panel_info;
-	struct mdss_panel_data * pdata =NULL;
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct dcs_cmd_req cmdreq;
-	
-	char mtp_write_data[2] = {0xb0, 0x00};	
-	struct dsi_cmd_desc mtp_data_cmd = {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(mtp_write_data)},mtp_write_data};
-	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &mtp_data_cmd;
-	cmdreq.cmds_cnt = 1;
-	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
-	cmdreq.rlen = 0;
-	cmdreq.cb = NULL;
-	
-	pdata = container_of(panel_info, struct mdss_panel_data,
-				panel_info);
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-
-	mdss_dsi_op_mode_config(panel_info->mipi.mode, pdata);
-
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
-	mdss_set_tx_power_mode(0 , pdata );
-
-#ifdef F_WA_WATCHDOG_DURING_BOOTUP
-	{
-		char rbuf[]={0};
-	 	mdss_dsi_panel_cmd_read(ctrl_pdata, 0x0a, 0x00, NULL, rbuf, 1);
-	
-		if(rbuf[0] == 0x9C)
-		{
-			ctrl_pdata->lcd_connect_check = 1;
-			printk("[PANTECH_LCD]LCD Connect : 0x0A = %x\n",rbuf[0]);
-		}			
-		else
-		{
-			ctrl_pdata->lcd_connect_check = 0;
-			printk("[PANTECH_LCD]Maybe... LCD Disconnect : 0x0A = %x\n",rbuf[0]);
-		}
-	}
-#endif
-
-	mdss_dsi_panel_cmd_read(ctrl_pdata,0xc8,0x00,mtp_read,ctrl_pdata->rx_buf.data,10);
-	
-	*(cmdreq.cmds->payload + 1) = 0x0A;
-	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-	mdss_dsi_panel_cmd_read(ctrl_pdata,0xc8,0x00,mtp_read,ctrl_pdata->rx_buf.data,10);
-
-	*(cmdreq.cmds->payload + 1) = 0x14;
-	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-	mdss_dsi_panel_cmd_read(ctrl_pdata,0xc8,0x00,mtp_read,ctrl_pdata->rx_buf.data,10);
-
-	*(cmdreq.cmds->payload + 1) = 0x1E;
-	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-	mdss_dsi_panel_cmd_read(ctrl_pdata,0xc8,0x00,mtp_read,ctrl_pdata->rx_buf.data,3);
-	
-	mdss_set_tx_power_mode(1 , pdata );
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
-	
-}
-#endif
-#if defined (CONFIG_F_SKYDISP_EF56_SS) || defined (CONFIG_F_SKYDISP_EF59_SS) || defined (CONFIG_F_SKYDISP_EF60_SS)
-bool first_enable = false;
-#endif
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct msm_fb_data_type * mfd = mfdmsm_fb_get_mfd();
-	
+
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return;
 	}
-	
-	if(!mfd->panel_power_on)
-	{
-		printk("[%s] panel is off state (%d).....\n",__func__,mfd->panel_power_on);
-		return;
-	}
-	
+
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 #if defined (CONFIG_F_SKYDISP_EF56_SS) || defined (CONFIG_F_SKYDISP_EF59_SS) || defined (CONFIG_F_SKYDISP_EF60_SS)
@@ -959,15 +705,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 
-#if defined(CONFIG_MACH_MSM8974_EF56S) || defined(CONFIG_F_SKYDISP_EF60_SS) || \
-	defined(CONFIG_F_SKYDISP_EF59_SS)
-	if(!ctrl->lcd_on_skip_during_bootup)
-		ctrl->lcd_on_skip_during_bootup = true;
-#endif
-#ifdef CONFIG_F_SKYDISP_HBM_FOR_AMOLED
-	pdata->hbm_flag = 0;
-#endif
-	pr_err("%s:-\n", __func__);
+	pr_debug("%s:-\n", __func__);
 	return 0;
 }
 
@@ -1088,9 +826,8 @@ static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 	else
 		pcmds->link_state = DSI_LP_MODE;
 
-	pr_err("%s: dcs_cmd=%x len=%d, cmd_cnt=%d link_state=%d\n", __func__,
+	pr_debug("%s: dcs_cmd=%x len=%d, cmd_cnt=%d link_state=%d\n", __func__,
 		pcmds->buf[0], pcmds->blen, pcmds->cmd_cnt, pcmds->link_state);
-
 
 	return 0;
 

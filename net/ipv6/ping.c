@@ -224,5 +224,3 @@ int ping_v6_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	return len;	
 }
-
-#endif /* CONFIG_SKY_DS_CTS_ICMPV6_ECHO_REQUEST */

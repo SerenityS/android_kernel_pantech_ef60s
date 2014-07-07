@@ -289,6 +289,15 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 		smb349_otg_power(0);
 #endif /* defined(CONFIG_PANTECH_PMIC_CHARGER_SMB347) || defined(CONFIG_PANTECH_PMIC_CHARGER_SMB349) */
 
+
+		dwc3_otg_notify_host_mode(otg, on);
+		ret = regulator_enable(dotg->vbus_otg);
+		if (ret) {
+			dev_err(otg->phy->dev, "unable to enable vbus_otg\n");
+			dwc3_otg_notify_host_mode(otg, 0);
+			return ret;
+		}
+
 		/*
 		 * This should be revisited for more testing post-silicon.
 		 * In worst case we may need to disconnect the root hub
@@ -314,10 +323,11 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 			dev_err(otg->phy->dev,
 				"%s: failed to add XHCI pdev ret=%d\n",
 				__func__, ret);
+			regulator_disable(dotg->vbus_otg);
+			dwc3_otg_notify_host_mode(otg, 0);
 			return ret;
 		}
 
-		dwc3_otg_notify_host_mode(otg, on);
 #ifdef CONFIG_PANTECH_QUALCOMM_OTG_MODE_OVP_BUG		
 		//xsemiyas_debug
 		while((value = get_pantech_chg_otg_mode()) != 1){
@@ -416,7 +426,6 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 			platform_device_del(dwc->xhci);
 #else
 		platform_device_del(dwc->xhci);
-#endif
 		/*
 		 * Perform USB hardware RESET (both core reset and DBM reset)
 		 * when moving from host to peripheral. This is required for
@@ -437,32 +446,6 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 
 	return 0;
 }
-
-#if defined(CONFIG_PANTECH_USB_SMB_OTG_DISABLE_LOW_BATTERY) || defined(CONFIG_PANTECH_USB_TI_OTG_DISABLE_LOW_BATTERY)
-int get_pantech_otg_enabled(void)
-{
-	return is_otg_enabled;
-}
-EXPORT_SYMBOL(get_pantech_otg_enabled);
-
-void pantech_otg_uvlo_notify(int on)
-{
-	printk(KERN_ERR "UVLO!! OTG power disconnect, on = [%d]\n", on);
-	is_otg_enabled = 0;
-#ifdef CONFIG_ANDROID_PANTECH_USB_OTG_INTENT
-	set_otg_dev_state(3);
-#endif
-	if(on) {
-		msleep(5000);
-#if defined(CONFIG_PANTECH_PMIC_CHARGER_SMB347) || defined(CONFIG_PANTECH_PMIC_CHARGER_SMB349)
-		smb349_otg_power(0);
-#elif defined(CONFIG_PANTECH_PMIC_CHARGER_BQ2419X)
-		chg_force_switching_scope(1); //OTG power remove
-#endif
-	}
-}
-EXPORT_SYMBOL(pantech_otg_uvlo_notify);
-#endif
 
 /**
  * dwc3_otg_set_host -  bind/unbind the host controller driver.
@@ -757,7 +740,7 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 		return 0;
 
 	dev_info(phy->dev, "Avail curr from USB = %u\n", mA);
-    
+
 	if (dotg->charger->max_power <= 2 && mA > 2) {
 		/* Enable charging */
 		if (power_supply_set_online(dotg->psy, true))
@@ -985,7 +968,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					dwc3_otg_start_peripheral(&dotg->otg,
 									1);
 					phy->state = OTG_STATE_B_PERIPHERAL;
-					pr_info("DWC3_SDP_CHARGER\n");
 					work = 1;
 					break;
 				case DWC3_FLOATED_CHARGER:
